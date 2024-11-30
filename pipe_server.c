@@ -1,5 +1,4 @@
 // pipe_server.c
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
@@ -12,20 +11,20 @@
 #include <time.h>
 #include <semaphore.h>
 
-#define MAX_CLIENTS 2
-#define BOARD_SIZE 3
+#define MAX_CLIENTS 2 // 최대 클라이언트 수
+#define BOARD_SIZE 3  // 게임판 크기
 #define SEM_NAME_FORMAT "/sem_player_%d"
-#define PIPE_READ 0
-#define PIPE_WRITE 1
+#define PIPE_READ 0  // 파이프 인덱스
+#define PIPE_WRITE 1 // 파이프 인덱스
 
-typedef struct
+typedef struct // 게임 상태 구조체
 {
     char board[BOARD_SIZE][BOARD_SIZE];
     int turn;   // 현재 턴인 플레이어 ID (0 또는 1)
     int winner; // -1: 게임 진행 중, 0 또는 1: 승자, 2: 무승부
 } GameState;
 
-typedef struct
+typedef struct // 클라이언트 정보 구조체
 {
     int id;
     int pipe_fd[2]; // [읽기, 쓰기]
@@ -35,15 +34,15 @@ typedef struct
 
 // 전역 변수 정의
 GameState game;
-pthread_mutex_t game_mutex = PTHREAD_MUTEX_INITIALIZER; // 게임 상태 보호를 위한 뮤텍스
-pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER; // 파일 접근 보호를 위한 뮤텍스
-ClientInfo clients[MAX_CLIENTS];
-int client_count = 0;
-char *fifo_names[MAX_CLIENTS] = {"client0_fifo", "client1_fifo"};
-char *server_fifos[MAX_CLIENTS] = {"server0_fifo", "server1_fifo"};
-struct timespec game_start_time, game_end_time;
-double input_times[MAX_CLIENTS] = {0.0};
-volatile int game_over_flag = 0; // 게임 종료 플래그
+pthread_mutex_t game_mutex = PTHREAD_MUTEX_INITIALIZER;             // 게임 상태 보호를 위한 뮤텍스
+pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER;             // 파일 접근 보호를 위한 뮤텍스
+ClientInfo clients[MAX_CLIENTS];                                    // 클라이언트 정보 배열
+int client_count = 0;                                               // 현재 클라이언트 수
+char *fifo_names[MAX_CLIENTS] = {"client0_fifo", "client1_fifo"};   // 클라이언트 FIFO 이름
+char *server_fifos[MAX_CLIENTS] = {"server0_fifo", "server1_fifo"}; // 서버 FIFO 이름
+struct timespec game_start_time, game_end_time;                     // 게임 시작 및 종료 시간
+double input_times[MAX_CLIENTS] = {0.0};                            // 클라이언트별 입력 시간
+volatile int game_over_flag = 0;                                    // 게임 종료 플래그
 
 // 게임 초기화 함수
 void init_game(GameState *game)
@@ -58,7 +57,9 @@ void init_game(GameState *game)
 // 승리 조건 체크 함수
 int check_winner(GameState *game)
 {
-    // 가로, 세로, 대각선 체크
+    // 틱택토의 승리 조건
+    //  가로, 세로, 대각선 중 한 줄이라도 같은 문자열이면 승리
+    //  가로, 세로, 대각선 체크
     for (int i = 0; i < BOARD_SIZE; i++)
     {
         // 가로
@@ -66,7 +67,7 @@ int check_winner(GameState *game)
             game->board[i][0] == game->board[i][1] &&
             game->board[i][1] == game->board[i][2])
         {
-            printf("Player %d wins by row %d!\n", game->board[i][0] == 'X' ? 0 : 1, i);
+            printf("플레이어 %d 승리, 가로줄 %d!\n", game->board[i][0] == 'X' ? 0 : 1, i);
             fflush(stdout);
             return game->board[i][0] == 'X' ? 0 : 1;
         }
@@ -76,7 +77,7 @@ int check_winner(GameState *game)
             game->board[0][i] == game->board[1][i] &&
             game->board[1][i] == game->board[2][i])
         {
-            printf("Player %d wins by column %d!\n", game->board[0][i] == 'X' ? 0 : 1, i);
+            printf("플레이어 %d 승리, 세로줄 %d!\n", game->board[0][i] == 'X' ? 0 : 1, i);
             fflush(stdout);
             return game->board[0][i] == 'X' ? 0 : 1;
         }
@@ -87,7 +88,7 @@ int check_winner(GameState *game)
         game->board[0][0] == game->board[1][1] &&
         game->board[1][1] == game->board[2][2])
     {
-        printf("Player %d wins by main diagonal!\n", game->board[0][0] == 'X' ? 0 : 1);
+        printf("플레이어 %d 승리, 대각선!\n", game->board[0][0] == 'X' ? 0 : 1);
         fflush(stdout);
         return game->board[0][0] == 'X' ? 0 : 1;
     }
@@ -96,7 +97,7 @@ int check_winner(GameState *game)
         game->board[0][2] == game->board[1][1] &&
         game->board[1][1] == game->board[2][0])
     {
-        printf("Player %d wins by anti-diagonal!\n", game->board[0][2] == 'X' ? 0 : 1);
+        printf("플레이어 %d 승리, 대각선!\n", game->board[0][2] == 'X' ? 0 : 1);
         fflush(stdout);
         return game->board[0][2] == 'X' ? 0 : 1;
     }
@@ -111,7 +112,7 @@ int is_draw(GameState *game)
         for (int j = 0; j < BOARD_SIZE; j++)
             if (game->board[i][j] == ' ')
                 return 0; // 아직 빈 공간 있음
-    printf("The game is a draw.\n");
+    printf("무승부\n");
     fflush(stdout);
     return 1; // 무승부
 }
@@ -130,7 +131,7 @@ int make_move(GameState *game, int player_id, int row, int col)
 // 게임 모니터링 스레드
 void *game_monitor(void *arg)
 {
-    printf("Game monitor thread started.\n");
+    printf("**게임 시작 알림**\n");
     fflush(stdout);
 
     while (!game_over_flag)
@@ -150,7 +151,7 @@ void *game_monitor(void *arg)
         sleep(1);
     }
 
-    printf("Game monitor thread detected game over.\n");
+    printf("**모니터링 결과 게임 종료**\n");
     fflush(stdout);
 
     // 게임 종료 메시지 전송 및 세마포어 해제
@@ -179,7 +180,7 @@ void *game_monitor(void *arg)
 void *client_handler(void *arg)
 {
     ClientInfo *client = (ClientInfo *)arg;
-    printf("Client handler for Player %d started.\n", client->id);
+    printf("**클라이언트 %d의 스레드 연결 확인**\n", client->id);
     fflush(stdout);
     char buffer[256];
 
@@ -223,7 +224,7 @@ void *client_handler(void *arg)
         }
 
         // 현재 플레이어의 턴임을 서버 콘솔에 출력
-        printf("Player %d's turn.\n", client->id);
+        printf("플레이어 %d의 턴.\n", client->id);
         fflush(stdout); // 즉시 출력
 
         // 클라이언트의 수 입력 대기
@@ -285,7 +286,7 @@ void *client_handler(void *arg)
         else if (n == 0)
         {
             // 파이프가 닫혔을 때
-            printf("Client %d disconnected.\n", client->id);
+            printf("**클라이언트 %d의 파이프 연결 종료\n", client->id);
             fflush(stdout);
             break; // 스레드 종료
         }
@@ -295,7 +296,7 @@ void *client_handler(void *arg)
             break; // 스레드 종료
         }
     }
-    printf("Client handler for Player %d exiting.\n", client->id);
+    printf("**클라이언트 %d과 스레드 연결 종료**\n", client->id);
     fflush(stdout);
     pthread_exit(NULL);
 }
@@ -322,7 +323,7 @@ int main()
         }
     }
 
-    printf("Waiting for clients to connect...\n");
+    printf("**서버> 클라이언트 대기 중...**\n");
     fflush(stdout);
 
     // 클라이언트 접속 대기
@@ -362,7 +363,7 @@ int main()
         clients[id].pipe_fd[PIPE_WRITE] = fd_write;
 
         client_count++;
-        printf("Client %d connected.\n", id);
+        printf("**클라이언트 %d 접속**\n", id);
         fflush(stdout);
     }
 
@@ -418,19 +419,21 @@ int main()
     }
 
     // 결과 출력
-    printf("Game ended.\n");
+    printf("**게임 종료**\n");
     if (game.winner == 2 || game.winner == -1)
     {
-        printf("Result: Draw.\n");
+        printf("**결과: 무승부**\n");
     }
     else
     {
-        printf("Result: Player %d wins!\n", game.winner);
+        printf("**결과: 플레이어 %d 승리!**\n", game.winner);
     }
 
-    printf("Total Runtime: %.3f seconds\n", total_runtime);
-    printf("Total Input Time: %.3f seconds\n", total_input_time);
-    printf("Adjusted Time (Runtime - Input Time): %.3f seconds\n", total_runtime - total_input_time);
+    // 시간 출력
+    // 게임 실행 시간, 입력 시간, 프로세스 구동 시간(실행 시간 - 입력 시간)
+    printf("1. 게임 실행 시간: %.3f seconds\n", total_runtime);
+    printf("2. 사용자 입력 시간: %.3f seconds\n", total_input_time);
+    printf("3. 프로그램 구동 시간: %.3f seconds\n", total_runtime - total_input_time);
 
     // 리소스 정리
     pthread_mutex_destroy(&game_mutex);
@@ -440,13 +443,11 @@ int main()
         sem_close(clients[i].turn_sem);
         sem_unlink(clients[i].sem_name);
         close(clients[i].pipe_fd[PIPE_READ]);
-        // Write end은 이미 닫혔으므로 재닫기 시도 필요 없음
-        // close(clients[i].pipe_fd[PIPE_WRITE]); // 이미 닫힘
         unlink(fifo_names[i]);
         unlink(server_fifos[i]);
     }
 
-    printf("Server exiting.\n");
+    printf("**서버 종료**.\n");
     fflush(stdout);
 
     return 0;

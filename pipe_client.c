@@ -1,5 +1,4 @@
 // pipe_client.c
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
@@ -19,27 +18,24 @@
 int pipe_fd[2];     // [읽기, 쓰기]
 int player_id = -1; // 서버로부터 받은 플레이어 ID
 
-pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER;
-
 // 클라이언트 FIFO 이름과 서버 FIFO 이름을 저장할 변수
 char client_fifo_name[32];
 char server_fifo_name[32];
 
-// 조건 변수 및 뮤텍스
-pthread_cond_t turn_cond = PTHREAD_COND_INITIALIZER;
-pthread_mutex_t turn_mutex = PTHREAD_MUTEX_INITIALIZER;
+// 뮤텍스
+pthread_cond_t turn_cond = PTHREAD_COND_INITIALIZER;    // 조건 변수
+pthread_mutex_t turn_mutex = PTHREAD_MUTEX_INITIALIZER; // 턴 확인을 위한 뮤텍스
+pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER; // 파일 보호를 위한 뮤텍스
 
-// 스레드 종료를 위한 플래그
-volatile int game_over_flag = 0;
+// 플래그
+volatile int game_over_flag = 0; // 게임 종료 플래그
+volatile int your_turn = 0;      // 턴 플래그
 
-// 스레드간 신호를 위한 플래그
-volatile int your_turn = 0;
-
-// 서버 메시지 수신 및 처리 스레드
+// 서버 메시지 수신 및 처리 스레드용 함수
 void *listen_server(void *arg)
 {
     char buffer[256];
-    printf("Listener thread started for Player %d.\n", player_id);
+    printf("클라이언트 %d의 수신 스레드 정상 작동.\n", player_id);
     fflush(stdout);
     while (!game_over_flag)
     {
@@ -74,14 +70,14 @@ void *listen_server(void *arg)
                 pthread_cond_signal(&turn_cond);
                 pthread_mutex_unlock(&turn_mutex);
 
-                printf("Received 'Your Turn' from server.\n"); // 로그 메시지
+                printf("**서버> 당신의 차례**.\n"); // 로그 메시지
                 fflush(stdout);
             }
             else if (strncmp(buffer, "Game Over", 9) == 0)
             {
                 // 게임 종료
-                printf("Received 'Game Over' from server: %s\n", buffer);
-                printf("Exiting client.\n");
+                printf("**경기 결과**: %s\n", buffer);
+                printf("**자리를 치웁니다**\n");
                 fflush(stdout);
                 game_over_flag = 1;
 
@@ -99,20 +95,20 @@ void *listen_server(void *arg)
             else if (strncmp(buffer, "Invalid Move", 12) == 0)
             {
                 // 잘못된 수
-                printf("Invalid move. Try again.\n");
+                printf("**말을 다시 놓으세요**\n");
                 fflush(stdout);
             }
             else
             {
                 // 기타 메시지 처리
-                printf("Received unknown message from server: %s\n", buffer);
+                printf("**이상한 말이 나옴 오류: %s\n", buffer);
                 fflush(stdout);
             }
         }
         else if (n == 0)
         {
             // 파이프가 닫혔을 때
-            printf("Server closed the connection.\n");
+            printf("**서버와의 파이프 연결이 종료됩니다**\n");
             fflush(stdout);
             game_over_flag = 1;
 
@@ -129,14 +125,15 @@ void *listen_server(void *arg)
             break; // 스레드 종료
         }
     }
-    printf("Listener thread exiting for Player %d.\n", player_id);
+    printf("**클라이언트 %d 의 수신 스레드 연결 종료**\n", player_id);
     fflush(stdout);
     pthread_exit(NULL);
 }
 
+// 사용자 입력을 처리하는 스레드용 함수
 void *input_handler(void *arg)
 {
-    printf("Input handler thread started for Player %d.\n", player_id);
+    printf("**클라이언트 %d의 입력 스레드 정상 작동**\n", player_id);
     fflush(stdout);
     while (!game_over_flag)
     {
@@ -160,7 +157,7 @@ void *input_handler(void *arg)
 
         // 수 입력
         int row, col;
-        printf("Enter your move (row and column): ");
+        printf("말을 놓으세요[예:1 0]: ");
         fflush(stdout); // 출력 버퍼 플러시
 
         // 표준 입력을 감시하기 위해 select 함수 사용
@@ -189,9 +186,9 @@ void *input_handler(void *arg)
                     // 입력 처리
                     if (sscanf(input_buffer, "%d %d", &row, &col) != 2)
                     {
-                        printf("Invalid input format.\n");
+                        printf("**제대로 입력하세요**\n");
                         fflush(stdout);
-                        printf("Enter your move (row and column): ");
+                        printf("말을 놓으세요[예:1 0]: ");
                         fflush(stdout);
                         continue;
                     }
@@ -222,7 +219,7 @@ void *input_handler(void *arg)
         clock_gettime(CLOCK_MONOTONIC, &end_time);
         double elapsed = (end_time.tv_sec - start_time.tv_sec) +
                          (end_time.tv_nsec - start_time.tv_nsec) / 1e9;
-        printf("Input Time: %.3f seconds\n", elapsed);
+        printf("입력 시간: %.3f seconds\n", elapsed);
         fflush(stdout);
 
         // 서버로 수 전송 (row, col, elapsed_time)
@@ -234,32 +231,34 @@ void *input_handler(void *arg)
             continue;
         }
     }
-    printf("Input handler thread exiting for Player %d.\n", player_id);
+    printf("**클라이언트 %d 의 입력 스레드 종료**\n", player_id);
     fflush(stdout);
     pthread_exit(NULL);
 }
 
-// 상태 모니터링 스레드 (추가적인 기능을 수행할 수 있음)
+// 상태 모니터링 스레드용 함수
 void *status_monitor(void *arg)
 {
-    printf("Status monitor thread started for Player %d.\n", player_id);
+    // 속도 동기화용
+    printf("**클라이언트 %d의 모니터링 스레드 정상 작동**\n", player_id);
     fflush(stdout);
     while (!game_over_flag)
     {
-        // 클라이언트의 상태를 주기적으로 확인하거나 추가적인 작업을 수행
-        sleep(1); // 예시로 1초마다 확인
+        sleep(1); // 1초의 지연을 걸어둠, 너무 빠른 진행시 버퍼 오류 발생 가능을 예방
     }
-    printf("Status monitor thread exiting for Player %d.\n", player_id);
+    printf("**클라이언트 %d의 모니터링 스레드 종료**\n", player_id);
     fflush(stdout);
     pthread_exit(NULL);
 }
 
+// 메인 함수, 스레드
 int main(int argc, char *argv[])
 {
     // 인자 검사: 플레이어 ID (0 또는 1) 필요
     if (argc != 2)
     {
         fprintf(stderr, "Usage: %s <player_id (0 or 1)>\n", argv[0]);
+        // 클라이언트 프로세스 실행 시 ./pipe_client 0 또는 ./pipe_client 1로 실행
         exit(EXIT_FAILURE);
     }
 
@@ -291,7 +290,7 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
-    printf("Connected to server as Player %d.\n", player_id);
+    printf("<플레이어 %d 서버에 접속>\n", player_id);
     fflush(stdout);
 
     // 서버로부터 메시지 수신 스레드 시작
@@ -328,7 +327,7 @@ int main(int argc, char *argv[])
     pthread_cond_destroy(&turn_cond);
     pthread_mutex_destroy(&turn_mutex);
 
-    printf("Client exiting.\n");
+    printf("**클라이언트 종료**\n");
     fflush(stdout);
 
     return 0;
