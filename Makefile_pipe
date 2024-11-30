@@ -1,0 +1,15 @@
+# Makefile
+
+CC = gcc
+CFLAGS = -pthread
+
+all: server client
+
+server: pipe_server.c 
+	$(CC) $(CFLAGS) -o server pipe_server.c
+
+client: pipe_client.c 
+	$(CC) $(CFLAGS) -o client pipe_client.c
+
+clean:
+	rm -f server client readme.txt client0_fifo client1_fifo server0_fifo server1_fifo
