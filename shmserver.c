@@ -5,6 +5,7 @@
 #include <sys/shm.h>
 #include <unistd.h>
 #include <string.h>
+#include <time.h>  // 시간 측정을 위한 헤더 파일 추가
 
 #define SHM_KEY 60104      // 공유 메모리 키를 60103으로 설정
 #define BOARD_SIZE 9
@@ -151,6 +152,15 @@ void* client_handler_thread(void* arg) {
 }
 
 int main() {
+    struct timespec start_time, end_time; // 시간 측정 변수 선언
+    double elapsed_time;
+
+    // 프로그램 시작 시간 기록
+    if (clock_gettime(CLOCK_MONOTONIC, &start_time) == -1) {
+        perror("clock_gettime failed");
+        exit(EXIT_FAILURE);
+    }
+
     int shm_id = shmget(SHM_KEY, sizeof(SharedMemory), IPC_CREAT | 0666);
 
     if (shm_id < 0) {
@@ -216,8 +226,23 @@ int main() {
     shmdt(shared_mem);
     shmctl(shm_id, IPC_RMID, NULL);
 
+
+    // 프로그램 종료 시간 기록
+    if (clock_gettime(CLOCK_MONOTONIC, &end_time) == -1) {
+        perror("clock_gettime failed");
+        exit(EXIT_FAILURE);
+    }
+
+    // 경과 시간 계산
+    elapsed_time = (end_time.tv_sec - start_time.tv_sec) +
+        (end_time.tv_nsec - start_time.tv_nsec) / 1e9;
+
+    // 총 실행 시간 출력
+    printf("총 실행 시간: %.2f초\n", elapsed_time);
+
     printf("서버를 종료합니다.\n");
 
     return 0;
 }
+
 
